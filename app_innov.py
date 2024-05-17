@@ -1,97 +1,160 @@
+import re
 import streamlit as st
+import pandas as pd
 from pymongo import MongoClient
-import time
 
-# MongoDB setup
+# Connexion à MongoDB
 client = MongoClient("mongodb+srv://yassinemedessamadi:y8NaR9oLJbb2wfiG@cluster0.ctew7yq.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
 db = client["CIUP_FETE"]
-collection = db["Volonteers_FETE"]
+collection = db["roles"]
 
-# Rôles initiaux avec leurs créneaux horaires disponibles
-roles_and_times = {
-    "Admin": ["9:00 AM - 10:00 AM", "10:00 AM - 11:00 AM", "1:00 PM - 2:00 PM"],
-    "User": ["10:00 AM - 11:00 AM", "2:00 PM - 3:00 PM"],
-    "Guest": ["11:00 AM - 12:00 PM", "3:00 PM - 4:00 PM"],
-    "Manager": ["9:30 AM - 10:30 AM", "1:30 PM - 2:30 PM"],
-    "Visitor": ["12:00 PM - 1:00 PM", "4:00 PM - 5:00 PM"]
-}
+# Fonction de validation d'adresse e-mail
+def is_valid_email(email):
+    regex = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return re.match(regex, email) is not None
 
-country_codes = {
-    "France (+33)": "+33",
-    "Romania (+40)": "+40",
-    "Germany (+49)": "+49",
-    "United States (+1)": "+1",
-    "United Kingdom (+44)": "+44"
-}
+# Lecture du fichier CSV contenant les noms de maison
+@st.cache_data
+def load_house_names(csv_file):
+    df = pd.read_csv(csv_file)
+    return df['house_name'].tolist()
 
-# Fonction pour compter le nombre d'inscriptions dans un créneau spécifique
-def count_enrollments(role, timeslot):
-    return collection.count_documents({"role": role, "selected_time": timeslot})
+# Charger les noms de maison depuis le fichier CSV
+house_names = load_house_names('houses.csv')
 
-# Fonction pour récupérer les créneaux horaires déjà sélectionnés pour un rôle spécifique
-def get_existing_times(first_name, last_name, role):
-    cursor = collection.find({"first_name": first_name, "last_name": last_name, "role": role})
-    return [doc["selected_time"] for doc in cursor]
+# Fonction pour vérifier si l'utilisateur est déjà inscrit pour le même rôle et créneau
+def is_already_registered(email, role_selected, creneau_selected):
+    existing_registration = db.inscriptions.find_one({
+        "email": email,
+        "role": role_selected,
+        "heure": creneau_selected
+    })
+    return existing_registration is not None
 
-# Fonction pour récupérer les rôles déjà sélectionnés par l'utilisateur
-def get_existing_roles(first_name, last_name):
-    cursor = collection.find({"first_name": first_name, "last_name": last_name})
-    return [doc["role"] for doc in cursor]
-def write_to_mongo(data):
-    collection.insert_one(data)
+# Fonction pour obtenir les rôles et créneaux déjà choisis par l'utilisateur
+def get_registered_roles(email):
+    registrations = db.inscriptions.find({"email": email})
+    registered_roles = {(reg["role"], reg["heure"]) for reg in registrations}
+    return registered_roles
 
+# Titre de l'application
+st.title('Disponibilité des Rôles')
 
-repeatable_roles = {"User", "Admin"}
-max_slots_per_timeslot = 5
+# CSS pour centrer le formulaire
+st.markdown(
+    """
+    <style>
+    .centered-form {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        flex-direction: column;
+        text-align: center;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
+# Initialize session state for form fields if not already initialized
+if 'full_name' not in st.session_state:
+    st.session_state.full_name = ''
+if 'email' not in st.session_state:
+    st.session_state.email = ''
+if 'house_name' not in st.session_state:
+    st.session_state.house_name = house_names[0]
+if 'role_selected' not in st.session_state:
+    st.session_state.role_selected = ''
+if 'creneau_selected' not in st.session_state:
+    st.session_state.creneau_selected = ''
 
-# Start of the form
-with st.form(key='my_form',clear_on_submit=True):
-    first_name = st.text_input("First Name")
-    last_name = st.text_input("Last Name")
-    country = st.selectbox("Select your country", [
-        "France (+33)", "Romania (+40)", "Germany (+49)", 
-        "United States (+1)", "United Kingdom (+44)"
-    ])
-    phone_number = st.text_input("Phone Number (without country code)")
+# Conteneur centralisé pour le formulaire
+with st.container():
+    st.markdown('<div class="centered-form">', unsafe_allow_html=True)
     
-    # Getting current state of entries for role and timeslot
-    existing_roles = get_existing_roles(first_name, last_name)
-    filtered_roles = [role for role in roles_and_times if role in repeatable_roles or role not in existing_roles]
-    
-    if filtered_roles:
-        selected_role = st.selectbox("Choose your role", filtered_roles)
-        selected_times = get_existing_times(first_name, last_name, selected_role)
-        available_times = [
-            time for time in roles_and_times[selected_role]
-            if time not in selected_times and count_enrollments(selected_role, time) < max_slots_per_timeslot
-        ]
+    st.header('Choisissez un rôle et un créneau horaire')
+
+    # Champs supplémentaires
+    full_name = st.text_input('Full Name', value=st.session_state.full_name)
+    email = st.text_input('Email Address', value=st.session_state.email)
+    house_name = st.selectbox('House Name', house_names, index=house_names.index(st.session_state.house_name))
+
+    if email:
+        # Obtenir les rôles et créneaux déjà choisis par l'utilisateur
+        registered_roles = get_registered_roles(email)
     else:
-        selected_role = None
-        available_times = []
-        st.write("No roles available. You have already selected all available non-repeatable roles.")
+        registered_roles = set()
 
-    if available_times:
-        selected_time = st.selectbox(f"Available times for {selected_role}", available_times)
+    # Récupération des rôles disponibles
+    roles = list(collection.find())
+
+    # Sélection des rôles ayant des créneaux disponibles et non choisis par l'utilisateur
+    roles_disponibles = []
+    for role in roles:
+        task = role['task']
+        for creneau in role['creneaux']:
+            if creneau['places_disponibles'] > 0 and (task, creneau['heure']) not in registered_roles:
+                roles_disponibles.append(task)
+                break
+
+    if roles_disponibles:
+        role_selected = st.selectbox('Sélectionnez un rôle', roles_disponibles)
     else:
-        selected_time = None
-        st.write("No available times remaining for the role {selected_role}.")
-    
-    # Submit button for the form
-    submitted = st.form_submit_button("Submit")
-    if submitted:
-        if first_name and last_name and phone_number and selected_role and selected_time:
-            full_phone_number = country_codes[country] + phone_number
-            data = {
-                "first_name": first_name,
-                "last_name": last_name,
-                "full_phone_number": full_phone_number,
-                "role": selected_role,
-                "selected_time": selected_time
-            }
-            write_to_mongo(data)
-            st.success("Data successfully written to MongoDB.")
-            time.sleep(2)
-        else:
-            st.warning("Please fill out all fields.")
+        role_selected = None
+        st.error('Aucun rôle disponible pour votre sélection.')
 
+    if role_selected:
+        # Récupérer les créneaux horaires pour le rôle sélectionné et non choisis par l'utilisateur
+        creneaux_disponibles = []
+        for role in roles:
+            if role['task'] == role_selected:
+                for creneau in role['creneaux']:
+                    if creneau['places_disponibles'] > 0 and (role_selected, creneau['heure']) not in registered_roles:
+                        creneaux_disponibles.append(creneau['heure'])
+
+        # Affichage dynamique des créneaux horaires
+        creneau_selected = st.selectbox('Sélectionnez un créneau horaire', creneaux_disponibles)
+
+        if st.button('Confirmer'):
+            if not full_name or not email or not house_name:
+                st.error('Veuillez remplir tous les champs du formulaire.')
+            elif not is_valid_email(email):
+                st.error('Veuillez entrer une adresse e-mail valide.')
+            elif is_already_registered(email, role_selected, creneau_selected):
+                st.error('Vous êtes déjà inscrit pour ce rôle et ce créneau.')
+            else:
+                for role in roles:
+                    if role['task'] == role_selected:
+                        for creneau in role['creneaux']:
+                            if creneau['heure'] == creneau_selected:
+                                date = creneau['date']
+                                heure = creneau['heure']
+                                result = collection.update_one(
+                                    {"task": role_selected, "creneaux.date": date, "creneaux.heure": heure},
+                                    {"$inc": {"creneaux.$.places_disponibles": -1}}
+                                )
+                                if result.modified_count > 0:
+                                    # Sauvegarder les informations de l'utilisateur
+                                    db.inscriptions.insert_one({
+                                        "full_name": full_name,
+                                        "email": email,
+                                        "house_name": house_name,
+                                        "role": role_selected,
+                                        "date": date,
+                                        "heure": heure
+                                    })
+                                    st.success(f'Inscription confirmée pour le rôle: {role_selected} à {creneau_selected}')
+                                    # Clear the form fields
+                                    st.session_state.full_name = ''
+                                    st.session_state.email = ''
+                                    st.session_state.house_name = house_names[0]
+                                    st.session_state.role_selected = ''
+                                    st.session_state.creneau_selected = ''
+                                    # Redirect to confirmation page
+                                    st.experimental_set_query_params(page="confirmation")
+                                    st.experimental_rerun()
+                                else:
+                                    st.error('Une erreur s\'est produite. Veuillez réessayer.')
+                                break
+
+    st.markdown('</div>', unsafe_allow_html=True)
