@@ -68,7 +68,7 @@ def get_creneaux_disponibles(roles, role_selected, registered_roles):
     return creneaux_disponibles
 
 
-st.title('Disponibility des Rôles')
+st.title('fête de la Cité')
 
 # Initial session state
 if 'role_selected' not in st.session_state:
@@ -92,7 +92,7 @@ form_container = st.container()
 
 # Display form for user input inside the container
 with form_container:
-    st.header('Choisissez un rôle et un créneau horaire')
+    
 
     full_name = st.text_input('Full Name', value=st.session_state.full_name, key='full_name_input')
     email = st.text_input('Email Address', value=st.session_state.email, key='email_input')
