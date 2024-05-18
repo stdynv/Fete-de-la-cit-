@@ -68,7 +68,7 @@ def get_creneaux_disponibles(roles, role_selected, registered_roles):
     return creneaux_disponibles
 
 
-st.title('fête de la Cité')
+st.title('fête de la Cité - Call for Volunteers')
 
 # Initial session state
 if 'role_selected' not in st.session_state:
