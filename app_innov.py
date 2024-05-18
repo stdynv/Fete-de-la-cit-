@@ -1,4 +1,5 @@
 import re
+import time
 import streamlit as st
 import pandas as pd
 from pymongo import MongoClient
@@ -67,7 +68,7 @@ def get_creneaux_disponibles(roles, role_selected, registered_roles):
     return creneaux_disponibles
 
 
-st.title('Fête de la Cité - Call for Volunteers')
+st.title('Disponibility des Rôles')
 
 # Initial session state
 if 'role_selected' not in st.session_state:
@@ -91,6 +92,8 @@ form_container = st.container()
 
 # Display form for user input inside the container
 with form_container:
+    st.header('Choisissez un rôle et un créneau horaire')
+
     full_name = st.text_input('Full Name', value=st.session_state.full_name, key='full_name_input')
     email = st.text_input('Email Address', value=st.session_state.email, key='email_input')
     house_name = st.selectbox('House Name', house_names)
@@ -148,13 +151,12 @@ with form_container:
                                 st.success(
                                     f'Inscription confirmée pour le rôle: {st.session_state.role_selected} à {creneau_selected}')
 
-
                                 # Clear the input fields
-                                st.session_state.full_name = ""
-                                st.session_state.email = ""
 
-                                # Clear input widgets
+                                time.sleep(1)
+                                # Reload the page
                                 st.experimental_rerun()
                             else:
                                 st.error('Une erreur s\'est produite. Veuillez réessayer.')
                             break
+
